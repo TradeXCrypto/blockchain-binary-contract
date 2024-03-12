@@ -711,6 +711,8 @@ pragma abicoder v2;
 contract Prediction is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    uint256[3] private referralPercents = [400, 300, 300]; // 4% 3% 3%
+
     address public adminAddress; // address of the admin
     address public operatorAddress; // address of the operator
 
@@ -727,6 +729,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     mapping(uint256 => mapping(address => BetInfo)) public ledger;
     mapping(uint256 => Round) public rounds;
     mapping(address => uint256[]) public userRounds;
+    mapping(address => address) public userReferrers;
 
     enum Position {
         Bull,
@@ -786,6 +789,8 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     event TreasuryClaim(uint256 amount);
     event Unpause(uint256 indexed epoch);
 
+    event ReferralBonuse(address from, address to, uint256 amount);
+
     modifier onlyAdmin() {
         require(msg.sender == adminAddress, "Not admin");
         _;
@@ -839,7 +844,8 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @param epoch: epoch
      */
     function betBear(
-        uint256 epoch
+        uint256 epoch,
+        address referrer
     ) external payable whenNotPaused nonReentrant notContract {
         require(epoch == currentEpoch, "Bet is too early/late");
         require(_bettable(epoch), "Round not bettable");
@@ -851,6 +857,10 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             ledger[epoch][msg.sender].amount == 0,
             "Can only bet once per round"
         );
+
+        if (userReferrers[msg.sender] == address(0)) {
+            _setReferrer(referrer);
+        }
 
         // Update round data
         uint256 amount = msg.value;
@@ -872,7 +882,8 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @param epoch: epoch
      */
     function betBull(
-        uint256 epoch
+        uint256 epoch,
+        address referrer
     ) external payable whenNotPaused nonReentrant notContract {
         require(epoch == currentEpoch, "Bet is too early/late");
         require(_bettable(epoch), "Round not bettable");
@@ -884,6 +895,10 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             ledger[epoch][msg.sender].amount == 0,
             "Can only bet once per round"
         );
+
+        if (userReferrers[msg.sender] == address(0)) {
+            _setReferrer(referrer);
+        }
 
         // Update round data
         uint256 amount = msg.value;
@@ -949,6 +964,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         }
 
         if (reward > 0) {
+            _distributeRefferalBonuses(reward);
             _safeTransferBNB(address(msg.sender), reward);
         }
     }
@@ -1044,6 +1060,17 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         emit NewOperatorAddress(_operatorAddress);
     }
 
+    function setReferralPercents(
+        uint256[3] calldata _referralPercents
+    ) external onlyAdmin {
+        uint256 sumOfPercents;
+        for (uint256 i = 0; i < _referralPercents.length; i++) {
+            sumOfPercents += _referralPercents[i];
+        }
+        require(sumOfPercents <= 50000, "Percents too high");
+        referralPercents = _referralPercents;
+    }
+
     /**
      * @notice Set treasury fee
      * @dev Callable by admin
@@ -1078,6 +1105,10 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         adminAddress = _adminAddress;
 
         emit NewAdminAddress(_adminAddress);
+    }
+
+    function getReferralPercents() external view returns (uint256[3] memory) {
+        return referralPercents;
     }
 
     /**
@@ -1200,6 +1231,31 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             rewardAmount,
             treasuryAmt
         );
+    }
+
+    function _setReferrer(address referrer) internal {
+        require(
+            userReferrers[msg.sender] == address(0),
+            "User already has a referrer"
+        );
+        if (referrer == address(0)) {
+            userReferrers[msg.sender] = adminAddress;
+            return;
+        }
+        userReferrers[msg.sender] = referrer;
+    }
+
+    function _distributeRefferalBonuses(uint256 amount) internal {
+        address currentReferrer = msg.sender;
+        for (uint256 i = 0; i < referralPercents.length; i++) {
+            uint rewardAmount = (amount * referralPercents[i]) / 10000;
+            currentReferrer = userReferrers[currentReferrer];
+            if (currentReferrer == address(0)) {
+                currentReferrer = adminAddress;
+            }
+            emit ReferralBonuse(msg.sender, currentReferrer, rewardAmount);
+            _safeTransferBNB(currentReferrer, rewardAmount);
+        }
     }
 
     /**

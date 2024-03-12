@@ -3,7 +3,7 @@ import { Prediction } from "../typechain-types";
 import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { parseEther } from "ethers";
+import { ZeroAddress, parseEther } from "ethers";
 
 describe("Predicion", () => {
     let owner: HardhatEthersSigner,
@@ -96,8 +96,8 @@ describe("Predicion", () => {
         const startTx = await predictionContract.connect(operator).executeRound(100);
         await startTx.wait();
         const betAmount = parseEther("1");
-        const betBullTx = predictionContract.connect(acc1).betBull(1, { value: betAmount });
-        const betBearTx = predictionContract.connect(acc2).betBear(1, { value: betAmount });
+        const betBullTx = predictionContract.connect(acc1).betBull(1, ZeroAddress, { value: betAmount });
+        const betBearTx = predictionContract.connect(acc2).betBear(1, ZeroAddress, { value: betAmount });
         await expect(betBullTx).to.changeEtherBalances([predictionContract, acc1], [betAmount, -betAmount]);
         await expect(betBearTx).to.changeEtherBalances([predictionContract, acc2], [betAmount, -betAmount]);
     });
@@ -106,16 +106,16 @@ describe("Predicion", () => {
         const startTx = await predictionContract.connect(operator).executeRound(100);
         await startTx.wait();
         const betAmount = parseEther("1");
-        const betBullTx = await predictionContract.connect(acc1).betBull(1, { value: betAmount });
+        const betBullTx = await predictionContract.connect(acc1).betBull(1, ZeroAddress, { value: betAmount });
         await betBullTx.wait();
-        const betBearTx = predictionContract.connect(acc1).betBear(1, { value: betAmount });
+        const betBearTx = predictionContract.connect(acc1).betBear(1, ZeroAddress, { value: betAmount });
         await expect(betBearTx).to.be.revertedWith("Can only bet once per round");
     });
 
     it("should not be possible to make bet lower than minBetAmount", async () => {
         const startTx = await predictionContract.connect(operator).executeRound(100);
         await startTx.wait();
-        const betBullTx = predictionContract.connect(acc1).betBull(1);
+        const betBullTx = predictionContract.connect(acc1).betBull(1, ZeroAddress);
         await expect(betBullTx).to.be.revertedWith("Bet amount must be greater than minBetAmount");
     });
 
@@ -127,9 +127,9 @@ describe("Predicion", () => {
         const betBullAmount = parseEther("1");
         const betBearAmount = parseEther("2");
         const roundBeforeExecute = await predictionContract.rounds(1);
-        const betBullTx = await predictionContract.connect(acc1).betBull(1, { value: betBullAmount });
+        const betBullTx = await predictionContract.connect(acc1).betBull(1, ZeroAddress, { value: betBullAmount });
         await betBullTx.wait();
-        const betBearTx = await predictionContract.connect(acc2).betBear(1, { value: betBearAmount });
+        const betBearTx = await predictionContract.connect(acc2).betBear(1, ZeroAddress, { value: betBearAmount });
         await betBearTx.wait();
         await time.increaseTo(roundBeforeExecute.closeTimestamp);
         const executeTx = await predictionContract.connect(operator).executeRound(closePrice);
@@ -139,11 +139,18 @@ describe("Predicion", () => {
         const treasuryFee = await predictionContract.treasuryFee();
         const totalAmount = betBullAmount + betBearAmount;
         const roundRewardAmount = totalAmount - (totalAmount * treasuryFee) / 10000n;
-        const bullRewardAmount = (betBullAmount * roundRewardAmount) / betBullAmount;
         const claimBullTx = predictionContract.connect(acc1).claim([1]);
+        const referralPercents = await predictionContract.getReferralPercents();
+
+        const sumOfRefPercents = referralPercents.reduce((prev, curr) => prev + curr, 0n);
+
+        let bullRewardAmount = (betBullAmount * roundRewardAmount) / betBullAmount;
+        const referralAmount = (bullRewardAmount * sumOfRefPercents) / 10000n;
+
         await expect(claimBullTx).to.changeEtherBalances(
+            // TODO: fix unit
             [predictionContract, acc1],
-            [-bullRewardAmount, bullRewardAmount]
+            [-bullRewardAmount, bullRewardAmount - referralAmount]
         );
         expect(roundAfterExecute).to.be.eql([
             1n,
