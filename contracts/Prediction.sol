@@ -711,6 +711,8 @@ pragma abicoder v2;
 contract Prediction is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    address[] private distributionReceivers;
+    uint256[] private distributionPercents;
     uint256[3] private referralPercents = [400, 300, 300]; // 4% 3% 3%
 
     address public adminAddress; // address of the admin
@@ -790,6 +792,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     event Unpause(uint256 indexed epoch);
 
     event ReferralBonuse(address from, address to, uint256 amount);
+    event DistributionOnClaim(address from, address to, uint256 amount);
 
     modifier onlyAdmin() {
         require(msg.sender == adminAddress, "Not admin");
@@ -964,8 +967,12 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         }
 
         if (reward > 0) {
-            _distributeRefferalBonuses(reward);
-            _safeTransferBNB(address(msg.sender), reward);
+            uint256 distributedAmount = _makeDistributions(reward);
+            uint256 distributedByReferral = _distributeRefferalBonuses(reward);
+            _safeTransferBNB(
+                address(msg.sender),
+                reward - (distributedByReferral + distributedAmount)
+            );
         }
     }
 
@@ -1067,8 +1074,25 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         for (uint256 i = 0; i < _referralPercents.length; i++) {
             sumOfPercents += _referralPercents[i];
         }
-        require(sumOfPercents <= 50000, "Percents too high");
+        require(sumOfPercents <= 5000, "Percents too high");
         referralPercents = _referralPercents;
+    }
+
+    function setupDistribution(
+        address[] calldata _receivers,
+        uint256[] calldata _percents
+    ) external onlyAdmin {
+        require(
+            _receivers.length == _percents.length,
+            "Receivers and percents length must be equal"
+        );
+        uint256 sumOfPercents;
+        for (uint256 i = 0; i < _percents.length; i++) {
+            sumOfPercents += _percents[i];
+        }
+        require(sumOfPercents <= 8000, "Percents too high");
+        distributionReceivers = _receivers;
+        distributionPercents = _percents;
     }
 
     /**
@@ -1109,6 +1133,22 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
 
     function getReferralPercents() external view returns (uint256[3] memory) {
         return referralPercents;
+    }
+
+    function getDistributionReceivers()
+        external
+        view
+        returns (address[] memory)
+    {
+        return distributionReceivers;
+    }
+
+    function getDistributionPercents()
+        external
+        view
+        returns (uint256[] memory)
+    {
+        return distributionPercents;
     }
 
     /**
@@ -1245,7 +1285,9 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         userReferrers[msg.sender] = referrer;
     }
 
-    function _distributeRefferalBonuses(uint256 amount) internal {
+    function _distributeRefferalBonuses(
+        uint256 amount
+    ) internal returns (uint256 totalDistributed) {
         address currentReferrer = msg.sender;
         for (uint256 i = 0; i < referralPercents.length; i++) {
             uint rewardAmount = (amount * referralPercents[i]) / 10000;
@@ -1253,8 +1295,24 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             if (currentReferrer == address(0)) {
                 currentReferrer = adminAddress;
             }
+            totalDistributed += rewardAmount;
             emit ReferralBonuse(msg.sender, currentReferrer, rewardAmount);
             _safeTransferBNB(currentReferrer, rewardAmount);
+        }
+    }
+
+    function _makeDistributions(
+        uint256 amount
+    ) internal returns (uint256 totalDistributed) {
+        for (uint256 i = 0; i < distributionPercents.length; i++) {
+            uint rewardAmount = (amount * distributionPercents[i]) / 10000;
+            totalDistributed += rewardAmount;
+            emit DistributionOnClaim(
+                msg.sender,
+                distributionReceivers[i],
+                rewardAmount
+            );
+            _safeTransferBNB(distributionReceivers[i], rewardAmount);
         }
     }
 
