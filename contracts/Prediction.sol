@@ -719,6 +719,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     address public operatorAddress; // address of the operator
 
     uint256 public intervalSeconds; // interval in seconds between two prediction rounds
+    uint256 public bufferPeriod; // period after close bets and before calculating rewards
 
     uint256 public minBetAmount; // minimum betting amount (denominated in wei)
     uint256 public treasuryFee; // treasury rate (e.g. 200 = 2%, 150 = 1.50%)
@@ -742,6 +743,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         uint256 epoch;
         uint256 startTimestamp;
         uint256 closeTimestamp;
+        uint256 closeBetsTimestamp;
         int256 startPrice;
         int256 closePrice;
         uint256 totalAmount;
@@ -773,7 +775,10 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     event LockRound(uint256 indexed epoch, int256 price);
 
     event NewAdminAddress(address admin);
-    event NewIntervalSeconds(uint256 intervalSeconds);
+    event NewBufferAndIntervalSeconds(
+        uint256 intervalSeconds,
+        uint256 _bufferPeriod
+    );
     event NewMinBetAmount(uint256 indexed epoch, uint256 minBetAmount);
     event NewTreasuryFee(uint256 indexed epoch, uint256 treasuryFee);
     event NewOperatorAddress(address operator);
@@ -830,6 +835,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         address _adminAddress,
         address _operatorAddress,
         uint256 _intervalSeconds,
+        uint256 _bufferPeriod,
         uint256 _minBetAmount,
         uint256 _treasuryFee
     ) {
@@ -840,6 +846,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         intervalSeconds = _intervalSeconds;
         minBetAmount = _minBetAmount;
         treasuryFee = _treasuryFee;
+        bufferPeriod = _bufferPeriod;
     }
 
     /**
@@ -980,7 +987,6 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @notice Start the next round n, lock price for round n-1, end round n-2
      * @dev Callable by operator
      */
-    // TODO: add signature
     function executeRound(
         int256 currentPrice
     ) external whenNotPaused onlyOperator {
@@ -1037,10 +1043,12 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @dev Callable by admin
      */
     function setBufferAndIntervalSeconds(
-        uint256 _intervalSeconds
+        uint256 _intervalSeconds,
+        uint256 _bufferPeriod
     ) external whenPaused onlyAdmin {
         intervalSeconds = _intervalSeconds;
-        emit NewIntervalSeconds(_intervalSeconds);
+        bufferPeriod = _bufferPeriod;
+        emit NewBufferAndIntervalSeconds(_intervalSeconds, _bufferPeriod);
     }
 
     /**
@@ -1372,6 +1380,10 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         Round storage round = rounds[epoch];
         round.startTimestamp = block.timestamp;
         round.closeTimestamp = block.timestamp + intervalSeconds;
+        round.closeBetsTimestamp =
+            block.timestamp +
+            intervalSeconds -
+            bufferPeriod;
         round.epoch = epoch;
         round.totalAmount = 0;
         round.startPrice = price;
@@ -1388,7 +1400,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         return
             rounds[epoch].startTimestamp != 0 &&
             block.timestamp > rounds[epoch].startTimestamp &&
-            block.timestamp < rounds[epoch].closeTimestamp;
+            block.timestamp < rounds[epoch].closeBetsTimestamp;
     }
 
     /**
