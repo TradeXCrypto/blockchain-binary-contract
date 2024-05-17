@@ -988,7 +988,8 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @dev Callable by operator
      */
     function executeRound(
-        int256 currentPrice
+        int256 currentPrice,
+        bool bullWins
     ) external whenNotPaused onlyOperator {
         if (currentEpoch == 0) {
             currentEpoch = currentEpoch + 1;
@@ -998,7 +999,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
 
         // CurrentEpoch refers to previous round (n-1)
         _safeEndRound(currentEpoch, currentPrice);
-        _calculateRewards(currentEpoch);
+        _calculateRewards(currentEpoch, bullWins);
 
         // Increment currentEpoch to current round (n)
         currentEpoch = currentEpoch + 1;
@@ -1234,11 +1235,46 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             betInfo.amount != 0;
     }
 
+    function calculateRewardByEpochs(
+        uint256[] memory epochs
+    ) external view returns (uint256 reward) {
+        for (uint256 i = 0; i < epochs.length; i++) {
+            if (
+                rounds[epochs[i]].startTimestamp == 0 ||
+                block.timestamp <= rounds[epochs[i]].closeTimestamp
+            ) {
+                continue;
+            }
+            uint256 addedReward = 0;
+            if (ledger[epochs[i]][msg.sender].claimed) {
+                continue;
+            }
+            if (rounds[epochs[i]].roundEnded) {
+                if (!claimable(epochs[i], msg.sender)) {
+                    continue;
+                }
+                Round memory round = rounds[epochs[i]];
+                addedReward =
+                    (ledger[epochs[i]][msg.sender].amount *
+                        round.rewardAmount) /
+                    round.rewardBaseCalAmount;
+            }
+            // Round invalid, refund bet amount
+            else {
+                if (!refundable(epochs[i], msg.sender)) {
+                    continue;
+                }
+                addedReward = ledger[epochs[i]][msg.sender].amount;
+            }
+            reward += addedReward;
+        }
+    }
+
     /**
      * @notice Calculate rewards for round
      * @param epoch: epoch
      */
-    function _calculateRewards(uint256 epoch) internal {
+    function _calculateRewards(uint256 epoch, bool bullWins) internal {
         require(
             rounds[epoch].rewardBaseCalAmount == 0 &&
                 rounds[epoch].rewardAmount == 0,
@@ -1250,23 +1286,18 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         uint256 rewardAmount;
 
         // Bull wins
-        if (round.closePrice > round.startPrice) {
+        if (bullWins) {
             rewardBaseCalAmount = round.bullAmount;
             treasuryAmt = (round.totalAmount * treasuryFee) / 10000;
             rewardAmount = round.totalAmount - treasuryAmt;
         }
         // Bear wins
-        else if (round.closePrice < round.startPrice) {
+        else {
             rewardBaseCalAmount = round.bearAmount;
             treasuryAmt = (round.totalAmount * treasuryFee) / 10000;
             rewardAmount = round.totalAmount - treasuryAmt;
         }
-        // House wins
-        else {
-            rewardBaseCalAmount = 0;
-            rewardAmount = 0;
-            treasuryAmt = round.totalAmount;
-        }
+
         round.rewardBaseCalAmount = rewardBaseCalAmount;
         round.rewardAmount = rewardAmount;
 
