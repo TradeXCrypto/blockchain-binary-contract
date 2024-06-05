@@ -988,14 +988,21 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @dev Callable by operator
      */
     function executeRound(
-        int256 currentPrice,
-        bool bullWins
+        int256 startPrice,
+        int256 currentPrice
     ) external whenNotPaused onlyOperator {
+        require(
+            startPrice != currentPrice,
+            "Cannot execute round with same price"
+        );
+
         if (currentEpoch == 0) {
-            currentEpoch = currentEpoch + 1;
+            s currentEpoch = currentEpoch + 1;
             _startRound(currentEpoch, currentPrice);
             return;
         }
+
+        uint256 bullWins = startPrice < currentPrice;
 
         // CurrentEpoch refers to previous round (n-1)
         _safeEndRound(currentEpoch, currentPrice);
