@@ -997,12 +997,12 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         );
 
         if (currentEpoch == 0) {
-            s currentEpoch = currentEpoch + 1;
+            currentEpoch = currentEpoch + 1;
             _startRound(currentEpoch, currentPrice);
             return;
         }
 
-        uint256 bullWins = startPrice < currentPrice;
+        bool bullWins = startPrice < currentPrice;
 
         // CurrentEpoch refers to previous round (n-1)
         _safeEndRound(currentEpoch, currentPrice);
