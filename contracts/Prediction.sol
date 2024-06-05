@@ -752,6 +752,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         uint256 rewardBaseCalAmount;
         uint256 rewardAmount;
         bool roundEnded;
+        bool bullWins;
     }
 
     struct BetInfo {
@@ -771,7 +772,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         uint256 amount
     );
     event Claim(address indexed sender, uint256 indexed epoch, uint256 amount);
-    event EndRound(uint256 indexed epoch, int256 price);
+    event EndRound(uint256 indexed epoch, int256 price, bool bullWins);
     event LockRound(uint256 indexed epoch, int256 price);
 
     event NewAdminAddress(address admin);
@@ -1005,7 +1006,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         bool bullWins = startPrice < currentPrice;
 
         // CurrentEpoch refers to previous round (n-1)
-        _safeEndRound(currentEpoch, currentPrice);
+        _safeEndRound(currentEpoch, currentPrice, bullWins);
         _calculateRewards(currentEpoch, bullWins);
 
         // Increment currentEpoch to current round (n)
@@ -1367,7 +1368,11 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
      * @param epoch: epoch
      * @param price: price of the round
      */
-    function _safeEndRound(uint256 epoch, int256 price) internal {
+    function _safeEndRound(
+        uint256 epoch,
+        int256 price,
+        bool bullWins
+    ) internal {
         require(
             block.timestamp >= rounds[epoch].closeTimestamp,
             "Can only end round after closeTimestamp"
@@ -1376,8 +1381,9 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
         Round storage round = rounds[epoch];
         round.closePrice = price;
         round.roundEnded = true; // TODO: check deps with refund logic
+        round.bullWins = bullWins;
 
-        emit EndRound(epoch, round.closePrice);
+        emit EndRound(epoch, round.closePrice, bullWins);
     }
 
     /**
