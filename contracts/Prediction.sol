@@ -1244,6 +1244,7 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
     }
 
     function calculateRewardByEpochs(
+        address userAddress,
         uint256[] memory epochs
     ) external view returns (uint256 reward) {
         for (uint256 i = 0; i < epochs.length; i++) {
@@ -1254,25 +1255,25 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
                 continue;
             }
             uint256 addedReward = 0;
-            if (ledger[epochs[i]][msg.sender].claimed) {
+            if (ledger[epochs[i]][userAddress].claimed) {
                 continue;
             }
             if (rounds[epochs[i]].roundEnded) {
-                if (!claimable(epochs[i], msg.sender)) {
+                if (!claimable(epochs[i], userAddress)) {
                     continue;
                 }
                 Round memory round = rounds[epochs[i]];
                 addedReward =
-                    (ledger[epochs[i]][msg.sender].amount *
+                    (ledger[epochs[i]][userAddress].amount *
                         round.rewardAmount) /
                     round.rewardBaseCalAmount;
             }
             // Round invalid, refund bet amount
             else {
-                if (!refundable(epochs[i], msg.sender)) {
+                if (!refundable(epochs[i], userAddress)) {
                     continue;
                 }
-                addedReward = ledger[epochs[i]][msg.sender].amount;
+                addedReward = ledger[epochs[i]][userAddress].amount;
             }
             reward += addedReward;
         }
