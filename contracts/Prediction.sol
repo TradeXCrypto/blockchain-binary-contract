@@ -1219,10 +1219,8 @@ contract Prediction is Ownable, Pausable, ReentrancyGuard {
             round.roundEnded &&
             betInfo.amount != 0 &&
             !betInfo.claimed &&
-            ((round.closePrice > round.startPrice &&
-                betInfo.position == Position.Bull) ||
-                (round.closePrice < round.startPrice &&
-                    betInfo.position == Position.Bear));
+            ((round.bullWins && betInfo.position == Position.Bull) ||
+                (!round.bullWins && betInfo.position == Position.Bear));
     }
 
     /**
